@@ -1,0 +1,29 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    cron \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first for better caching
+COPY etl/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY etl/ ./etl/
+COPY db/ ./db/
+
+# Create cron job for ETL
+RUN echo "0 * * * * cd /app && python -m etl.scheduler" > /etc/cron.d/etl
+RUN chmod 0644 /etc/cron.d/etl
+RUN crontab /etc/cron.d/etl
+
+# Health check
+HEALTHCHECK --interval=60s --timeout=30s --start-period=10s --retries=3 \
+    CMD ps aux | grep "[p]ython -m etl.scheduler" || exit 1
+
+# Run the ETL scheduler
+CMD ["python", "-m", "etl.scheduler"]
